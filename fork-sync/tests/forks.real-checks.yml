@@ -1,0 +1,7 @@
+# Like forks.test.yml, but the checks come from SEMIO.md (as in production).
+defaults:
+  labels: [enhancement]
+  claude_max_turns: 200
+forks:
+  - repo: semio-ai/zenoh
+    upstream: eclipse-zenoh/zenoh

@@ -1,0 +1,225 @@
+name: carry
+
+# One fork, called by sync.yml. Three jobs on three fresh runners, so that the
+# job that runs upstream code and Claude never holds a GitHub token:
+#   plan     App token  mirror main, detect a release, create semio/<new>,
+#                       bundle semio/<old>
+#   carry    no token   rebase, Claude Code on conflicts, checks; bundle the result
+#   publish  App token  verify the bundle, push carry/<new>, open the PR or the
+#                       failure issue
+# The logic is in scripts/fork_sync; see README.md.
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        type: string
+        required: true
+      version:
+        type: string
+        required: false
+        default: ""
+      timeout-minutes:
+        type: number
+        required: false
+        default: 240
+      free-disk:
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+      FORK_SYNC_APP_PRIVATE_KEY:
+        required: true
+      FORK_SYNC_SLACK_WEBHOOK:
+        required: false
+
+permissions: {}
+
+env:
+  WORK: ${{ github.workspace }}/.work
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+      old: ${{ steps.plan.outputs.old }}
+      new: ${{ steps.plan.outputs.new }}
+      owner: ${{ steps.names.outputs.owner }}
+      name: ${{ steps.names.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: names
+        env:
+          REPO: ${{ inputs.repo }}
+        run: |
+          echo "owner=${REPO%%/*}" >>"$GITHUB_OUTPUT"
+          echo "name=${REPO#*/}" >>"$GITHUB_OUTPUT"
+
+      # Workflows: write because fast-forwarding main and creating semio/<new>
+      # bring in upstream's changes to .github/workflows.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.FORK_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FORK_SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ steps.names.outputs.owner }}
+          repositories: ${{ steps.names.outputs.name }}
+          permission-contents: write
+          permission-workflows: write
+          permission-pull-requests: read
+          permission-issues: read
+
+      - id: plan
+        env:
+          FORK_SYNC_TOKEN: ${{ steps.app.outputs.token }}
+          FORK_SYNC_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          FORK_SYNC_SLACK_WEBHOOK: ${{ secrets.FORK_SYNC_SLACK_WEBHOOK }}
+          REPO: ${{ inputs.repo }}
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/fork-sync plan --repo "$REPO" --version "$VERSION" --work "$WORK"
+
+      - if: steps.plan.outputs.action == 'carry'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plan-${{ steps.names.outputs.name }}
+          path: |
+            ${{ env.WORK }}/plan.json
+            ${{ env.WORK }}/input.bundle
+          retention-days: 14
+          if-no-files-found: error
+
+      - if: failure()
+        env:
+          FORK_SYNC_SLACK_WEBHOOK: ${{ secrets.FORK_SYNC_SLACK_WEBHOOK }}
+          TEXT: "fork-sync: planning ${{ inputs.repo }} failed — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: python3 scripts/fork-sync notify --text "$TEXT"
+
+  carry:
+    needs: plan
+    if: needs.plan.outputs.action == 'carry'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cargo-target
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        if: inputs.free-disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift
+          df -h "$GITHUB_WORKSPACE"
+
+      # Claude Code's subprocess sandbox (CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)
+      # needs bubblewrap and socat, and Ubuntu 24.04 restricts the user
+      # namespaces bubblewrap uses.
+      - name: Install Claude Code and its sandbox
+        env:
+          CLAUDE_CODE_VERSION: ${{ vars.FORK_SYNC_CLAUDE_CODE_VERSION || '2.1.289' }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --dev /dev --proc /proc true
+          npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: plan-${{ needs.plan.outputs.name }}
+          path: ${{ env.WORK }}
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ env.CARGO_TARGET_DIR }}
+          key: cargo-${{ needs.plan.outputs.name }}-${{ needs.plan.outputs.new }}-${{ github.run_id }}
+          restore-keys: |
+            cargo-${{ needs.plan.outputs.name }}-${{ needs.plan.outputs.new }}-
+            cargo-${{ needs.plan.outputs.name }}-
+
+      # The only secret here is the Anthropic key, and Claude Code strips it
+      # from the commands it runs. No GitHub token exists in this job.
+      - name: Rebase, resolve, check
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FORK_SYNC_MODEL: ${{ vars.FORK_SYNC_MODEL || 'claude-fable-5-1' }}
+          FORK_SYNC_CLAUDE_MAX_BUDGET_USD: ${{ vars.FORK_SYNC_CLAUDE_MAX_BUDGET_USD }}
+          FORK_SYNC_CLAUDE_BARE: "1"
+          REPO: ${{ inputs.repo }}
+          CLAUDE_TIMEOUT: ${{ vars.FORK_SYNC_CLAUDE_TIMEOUT_MINUTES || '120' }}
+        run: |
+          python3 scripts/fork-sync carry --repo "$REPO" --work "$WORK" --install-toolchain \
+            --claude-timeout-minutes "$CLAUDE_TIMEOUT"
+
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: carry-${{ needs.plan.outputs.name }}
+          path: ${{ env.WORK }}/out
+          retention-days: 14
+          if-no-files-found: warn
+
+  publish:
+    needs: [plan, carry]
+    if: always() && needs.plan.outputs.action == 'carry'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: plan-${{ needs.plan.outputs.name }}
+          path: ${{ env.WORK }}
+
+      # Missing when the carry job was cancelled or timed out; publish then
+      # reports that in the failure issue.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: carry-${{ needs.plan.outputs.name }}
+          path: ${{ env.WORK }}/out
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.FORK_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FORK_SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ needs.plan.outputs.owner }}
+          repositories: ${{ needs.plan.outputs.name }}
+          permission-contents: write
+          permission-workflows: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Push and open the pull request, or the failure issue
+        env:
+          FORK_SYNC_TOKEN: ${{ steps.app.outputs.token }}
+          FORK_SYNC_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          FORK_SYNC_SLACK_WEBHOOK: ${{ secrets.FORK_SYNC_SLACK_WEBHOOK }}
+          REPO: ${{ inputs.repo }}
+        run: python3 scripts/fork-sync publish --repo "$REPO" --work "$WORK"

@@ -1,0 +1,34 @@
+# One entry per fork that fork-sync keeps carried onto upstream releases.
+# Adding a fork means adding an entry here, installing the semio-fork-sync
+# GitHub App on it, and giving its semio/<version> line a SEMIO.md.
+#
+# Keys (only `repo` and `upstream` are required):
+#   repo             the fork, owner/name
+#   upstream         the upstream repository, owner/name (must be public)
+#   tag_regex        upstream release tags to consider (default: stable x.y.z only)
+#   labels           labels for the carry pull request
+#   checks           list of commands to run after the rebase; overrides the
+#                    commands read from SEMIO.md's "Carrying ..." section
+#   check_programs   programs whose command lines are taken from SEMIO.md
+#                    (default: [cargo]); other lines (git, gh, ...) are ignored
+#   timeout_minutes  timeout of the carry job (Claude + checks)
+#   claude_max_turns turn limit for each Claude Code run
+#   free_disk        remove preinstalled SDKs from the runner before building
+#   skip_versions    upstream versions never to carry onto
+
+defaults:
+  tag_regex: '^\d+\.\d+\.\d+$'
+  labels: [enhancement]
+  check_programs: [cargo]
+  timeout_minutes: 240
+  claude_max_turns: 200
+  free_disk: true
+  skip_versions: []
+
+forks:
+  - repo: semio-ai/zenoh
+    upstream: eclipse-zenoh/zenoh
+
+  - repo: semio-ai/zenoh-ts
+    upstream: eclipse-zenoh/zenoh-ts
+    timeout_minutes: 150

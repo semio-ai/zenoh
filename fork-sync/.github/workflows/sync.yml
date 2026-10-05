@@ -1,0 +1,68 @@
+name: sync
+
+# Daily: fast-forward each fork's main to upstream and, when upstream has a
+# newer release than the newest semio/<version> line, carry Semio's commits
+# onto it (see README.md). Run by hand with the inputs below.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Fork to sync, as in forks.yml (owner/name); empty: every fork"
+        required: false
+        default: ""
+      version:
+        description: "Upstream tag to carry onto (needs repo); empty: the newest release"
+        required: false
+        default: ""
+
+permissions: {}
+
+jobs:
+  forks:
+    name: list forks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: matrix
+        env:
+          REPO: ${{ inputs.repo }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$VERSION" ] && [ -z "$REPO" ]; then
+            echo "::error::the version input needs the repo input"
+            exit 1
+          fi
+          python3 scripts/fork-sync matrix ${REPO:+--repo "$REPO"}
+
+  sync:
+    name: ${{ matrix.fork.repo }}
+    needs: forks
+    strategy:
+      fail-fast: false
+      matrix:
+        fork: ${{ fromJSON(needs.forks.outputs.matrix) }}
+    # Two runs never work on the same fork at once; a newer run waits.
+    concurrency:
+      group: fork-sync-${{ matrix.fork.repo }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    uses: ./.github/workflows/carry.yml
+    with:
+      repo: ${{ matrix.fork.repo }}
+      version: ${{ inputs.version || '' }}
+      timeout-minutes: ${{ matrix.fork.timeout_minutes }}
+      free-disk: ${{ matrix.fork.free_disk }}
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      FORK_SYNC_APP_PRIVATE_KEY: ${{ secrets.FORK_SYNC_APP_PRIVATE_KEY }}
+      FORK_SYNC_SLACK_WEBHOOK: ${{ secrets.FORK_SYNC_SLACK_WEBHOOK }}

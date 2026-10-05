@@ -1,0 +1,22 @@
+# Placeholder: GitHub offers workflow_dispatch only for workflows present on the
+# default branch. This lets `gh workflow run sync.yml --ref <branch>` run the
+# branch's real sync.yml before the first pull request is merged; that pull
+# request replaces this file.
+name: sync
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Fork to sync, as in forks.yml (owner/name); empty: every fork"
+        required: false
+        default: ""
+      version:
+        description: "Upstream tag to carry onto (needs repo); empty: the newest release"
+        required: false
+        default: ""
+permissions: {}
+jobs:
+  placeholder:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Run this workflow with --ref set to the branch of the fork-sync pull request."

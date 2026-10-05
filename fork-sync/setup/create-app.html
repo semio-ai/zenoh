@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create semio-fork-sync</title>
+<style>
+  :root { --bg: #fff; --fg: #1f2328; --muted: #59636e; --accent: #1f6feb; --code: #f6f8fa; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --accent: #4493f8; --code: #161b22; }
+  }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif;
+         max-width: 46rem; margin: 2rem auto; padding: 0 16px; }
+  pre { background: var(--code); padding: 1rem; overflow-x: auto; border-radius: 6px; font-size: 13px; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+           padding: .6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Create the <code>semio-fork-sync</code> GitHub App</h1>
+<p>This page sends the manifest below to GitHub, which registers the App under the
+<strong>semio-ai</strong> organization (not under your account). You need to be an
+owner of semio-ai.</p>
+<ol>
+  <li>Click <strong>Continue to GitHub</strong>, check the name, and click
+      <strong>Create GitHub App</strong>.</li>
+  <li>GitHub redirects to <code>github.com/semio-ai/fork-sync?code=…</code>. Copy the
+      value of <code>code</code> from the address bar and paste it into
+      <code>setup/bootstrap.sh</code> when it asks. The code is valid for one hour and
+      can be used once.</li>
+</ol>
+<form id="f" method="post">
+  <input type="hidden" name="manifest" id="manifest">
+  <button type="submit">Continue to GitHub</button>
+</form>
+<p class="muted">Permissions: Contents, Pull requests, Issues, Workflows (write); Metadata
+(read). No webhook, no events. Private to semio-ai.</p>
+<pre id="show"></pre>
+<script>
+  const manifest = {
+    name: "semio-fork-sync",
+    url: "https://github.com/semio-ai/fork-sync",
+    description: "Semio's fork-sync automation: fast-forwards fork mirrors, creates semio/<version> lines and opens carry pull requests. Owned by the semio-ai organization; runs from semio-ai/fork-sync.",
+    public: false,
+    redirect_url: "https://github.com/semio-ai/fork-sync",
+    hook_attributes: { url: "https://github.com/semio-ai/fork-sync", active: false },
+    default_events: [],
+    default_permissions: {
+      contents: "write", pull_requests: "write", issues: "write", workflows: "write", metadata: "read"
+    }
+  };
+  const state = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
+  document.getElementById("f").action =
+    "https://github.com/organizations/semio-ai/settings/apps/new?state=" + state;
+  document.getElementById("manifest").value = JSON.stringify(manifest);
+  document.getElementById("show").textContent = JSON.stringify(manifest, null, 2) +
+    "\n\nstate: " + state + "  (the redirect URL should end with &state=" + state + ")";
+</script>
+</body>
+</html>

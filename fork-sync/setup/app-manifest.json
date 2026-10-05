@@ -1,0 +1,19 @@
+{
+  "name": "semio-fork-sync",
+  "url": "https://github.com/semio-ai/fork-sync",
+  "description": "Semio's fork-sync automation: fast-forwards fork mirrors, creates semio/<version> lines and opens carry pull requests. Owned by the semio-ai organization; runs from semio-ai/fork-sync.",
+  "public": false,
+  "redirect_url": "https://github.com/semio-ai/fork-sync",
+  "hook_attributes": {
+    "url": "https://github.com/semio-ai/fork-sync",
+    "active": false
+  },
+  "default_events": [],
+  "default_permissions": {
+    "contents": "write",
+    "pull_requests": "write",
+    "issues": "write",
+    "workflows": "write",
+    "metadata": "read"
+  }
+}

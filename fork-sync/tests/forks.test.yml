@@ -1,0 +1,10 @@
+# forks.yml for tests/e2e.sh: the zenoh fork against a local forge, with a
+# quick check instead of SEMIO.md's cargo tests (E2E_REAL_CHECKS=1 uses those).
+defaults:
+  labels: [enhancement]
+  claude_max_turns: 120
+forks:
+  - repo: semio-ai/zenoh
+    upstream: eclipse-zenoh/zenoh
+    checks:
+      - cargo metadata --no-deps --format-version 1 --offline
