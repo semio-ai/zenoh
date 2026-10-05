@@ -103,7 +103,11 @@ def run_claude(*, repo_dir: Path, out_dir: Path, mode: str, system_prompt: str, 
     if budget:
         cmd += ["--max-budget-usd", budget]
 
-    env = scrubbed_env()
+    # Never let the child join a parent Claude Code session (when run locally
+    # from inside one): no messaging socket, no session ids.
+    env = {k: v for k, v in scrubbed_env().items()
+           if not k.startswith(("CLAUDE_CODE_MESSAGING", "CLAUDE_CODE_SESSION", "CLAUDE_CODE_REMOTE_SESSION",
+                                "CLAUDE_SESSION", "CLAUDE_PID")) and k != "CLAUDECODE"}
     env.update({
         "GIT_EDITOR": "true",
         "GIT_SEQUENCE_EDITOR": "true",
