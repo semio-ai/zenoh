@@ -1,0 +1,7 @@
+# tests/e2e.sh "fix_checks": a check that fails after the rebase until the
+# stub Claude folds a fix into a Semio commit.
+forks:
+  - repo: semio-ai/zenoh
+    upstream: eclipse-zenoh/zenoh
+    checks:
+      - git grep -q FORK_SYNC_TEST_FIXED -- SEMIO.md

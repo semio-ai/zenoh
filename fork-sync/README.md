@@ -75,6 +75,34 @@ at an upstream tag, never force-pushes anything but a `carry/*` branch it made
 itself (its tip committed by the App) that has no open pull request, and never
 opens anything against `eclipse-zenoh/*`.
 
+## Security model
+
+Upstream code and anything in the repositories (code, comments, commit
+messages) are third-party input, and a prompt-injection surface for Claude.
+
+- The **carry** job, the only one that builds upstream code or runs Claude,
+  has no GitHub token: it clones the public upstream and gets `semio/<old>` as
+  a bundle. Its only secret is the Anthropic key, which Claude Code strips
+  from every command it runs (`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, sandboxed
+  with bubblewrap) and which the checks never see. Claude runs with `--bare`
+  (no repository `CLAUDE.md`, hooks, plugins or MCP servers),
+  `--setting-sources user`, `--permission-mode dontAsk`, a tool allowlist
+  (file tools; `git`, `cargo` and read-only shell commands; no `git push`,
+  `fetch`, `remote` or `config`, no web tools, no subagents), a turn limit, a
+  time limit and an optional dollar budget. Its prompt tells it to treat
+  repository content as data.
+- The **plan** and **publish** jobs hold short-lived App tokens narrowed to one
+  fork and run no third-party code. publish trusts nothing from the carry job
+  but the bundle and the report text: it re-reads the tags from upstream and
+  the lines from the fork, re-checks the branch, refuses `.github/` changes
+  Semio did not make, and pushes only `carry/<new>`.
+- Check commands come from `SEMIO.md` on the human-reviewed `semio/<old>`,
+  never from the branch Claude produced, and run without a shell.
+- Workflows have `permissions: {}` at the top and `contents: read` per job;
+  every action is pinned to a commit SHA; checkouts use
+  `persist-credentials: false`; tokens are masked in logs.
+- Merging stays human: review the pull request like any external contribution.
+
 ## Reviewing a carry pull request
 
 Read the "Needs human review" box first, then Claude's report (it lists what

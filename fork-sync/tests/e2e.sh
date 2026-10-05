@@ -216,7 +216,41 @@ scenario_dry_run() {
   grep -q "WOULD git push --no-verify .* [0-9a-f]\{40\}:refs/heads/carry/1.10.2" "$F/w1.log" && ok "prints the push" || fail "prints the push"
 }
 
+scenario_fix_checks() {
+  echo "== checks fail after a clean rebase: one Claude attempt fixes them"
+  local F="$T/fix-checks" cfg="$CONFIG"
+  mkforge "$F" "$CLEAN_TAG" "$FORK_MAIN" "1.10.2=$CLEAN_TAG"
+  CONFIG="$HERE/forks.fix-checks.yml"
+  FORK_SYNC_CLAUDE_CMD="$HERE/stub-claude.sh" STUB_BEHAVIOUR=fix fsrun "$F" "$F/w1" || fail "run failed"
+  CONFIG="$cfg"
+  grep -q "running Claude Code (fix-checks" "$F/w1.log" && ok "Claude got one attempt at the failing checks" \
+    || fail "Claude got one attempt at the failing checks"
+  state "$F" '.prs[0].body' | grep -q "Before Claude's fix" && ok "PR body shows the checks before and after" \
+    || fail "PR body shows the checks before and after"
+  local carry
+  carry=$(ref "$F" carry/1.10.2)
+  [ "$(git --git-dir "$F/semio-ai/zenoh.git" rev-list --count "$CLEAN_TAG..$carry")" = 6 ] \
+    && ok "the fix was folded into a Semio commit (still 6 commits)" \
+    || fail "the fix was folded into a Semio commit (still 6 commits)"
+}
+
+scenario_phases() {
+  echo "== phases run one by one, as in CI; a carry job that dies leaves an issue"
+  local F="$T/phases"
+  mkforge "$F" "$CLEAN_TAG" "$FORK_MAIN" "1.10.2=$CLEAN_TAG"
+  local args=(--repo semio-ai/zenoh --config "$CONFIG" --local-forge "$F" --work "$F/w")
+  "$FS" plan "${args[@]}" >"$F/plan.log" 2>&1 || fail "plan failed"
+  [ "$(jq -r .action "$F/w/plan.json")" = carry ] && [ -s "$F/w/input.bundle" ] \
+    && ok "plan: carry, with the bundle of semio/1.10.1" || fail "plan: carry, with the bundle of semio/1.10.1"
+  # No carry phase: as if the carry job had been cancelled or timed out.
+  if "$FS" publish "${args[@]}" >"$F/publish.log" 2>&1; then fail "publish without a result succeeded"; fi
+  state "$F" '.issues[0].body' | grep -q "the carry job produced no result" \
+    && ok "publish opens an issue when the carry job left no result" \
+    || fail "publish opens an issue when the carry job left no result"
+  [ -z "$(ref "$F" carry/1.10.2)" ] && ok "nothing pushed" || fail "nothing pushed"
+}
+
 scenarios=("$@")
-[ ${#scenarios[@]} -eq 0 ] && scenarios=(clean stub_resolve abort unfinished workflow_guard dry_run)
+[ ${#scenarios[@]} -eq 0 ] && scenarios=(clean stub_resolve abort unfinished workflow_guard dry_run phases fix_checks)
 for s in "${scenarios[@]}"; do "scenario_${s//-/_}"; done
 echo "all passed ($pass checks); artifacts in $T"

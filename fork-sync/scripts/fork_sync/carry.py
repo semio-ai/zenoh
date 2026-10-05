@@ -4,7 +4,6 @@ leave a bundle of carry/<new> plus result.json for the publish job."""
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
 import shutil
@@ -113,6 +112,10 @@ def carry(work: Path, upstream_url: str, install_toolchain: bool = False,
         res["claude_runs"].append(info)
         ok, why = claude_outcome(g, new, abort_path, info)
         if not ok:
+            if g.rebase_in_progress():
+                later = conflict_state(g)
+                if later["commit"] != conflict["commit"] and later["files"]:
+                    res["conflicts"].append(later)
             abort_rebase(g)
             return finish("failure", why)
 
@@ -192,25 +195,38 @@ def conflict_state(g: Git) -> dict:
 
 
 def claude_outcome(g: Git, new: str, abort_path: Path, info: dict) -> tuple[bool, str]:
-    """The script, not Claude, decides whether the carry succeeded."""
+    """The script, not Claude, decides whether the carry succeeded: by the
+    state Claude left, whatever Claude says."""
     if info.get("turns") is None and info.get("exit_code"):
         return False, ("Claude Code did not run (exit code " + str(info["exit_code"]) + "):\n```\n"
                        + info.get("stderr_tail", "")[-3000:] + "\n```")
     if abort_path.exists():
         return False, "Claude gave up and explained why in SYNC_ABORT.md"
+    problem = repo_problem(g, new)
+    if not problem:
+        return True, ""
+    if info.get("timed_out"):
+        problem += f" (Claude Code hit its time limit after {info.get('seconds')} s)"
+    elif info.get("is_error") or (info.get("subtype") or "").startswith("error"):
+        problem += (f" (Claude Code stopped with {info.get('subtype')} after {info.get('turns')} turns: "
+                    f"{info.get('final_message', '')[:1000]})")
+    return False, problem
+
+
+def repo_problem(g: Git, new: str) -> str:
     if g.rebase_in_progress():
-        return False, "Claude exited with the rebase still in progress"
+        return "Claude exited with the rebase still in progress"
     branch = g.current_branch()
     if branch != f"carry/{new}":
-        return False, f"Claude left {branch or 'a detached HEAD'} checked out instead of carry/{new}"
+        return f"Claude left {branch or 'a detached HEAD'} checked out instead of carry/{new}"
     status = g.status_porcelain()
     if status:
-        return False, "Claude left the working tree dirty:\n" + head(status, 2000)
+        return "Claude left the working tree dirty:\n" + head(status, 2000)
     if not g.is_ancestor(f"refs/tags/{new}", "HEAD"):
-        return False, f"carry/{new} does not contain the tag {new}"
+        return f"carry/{new} does not contain the tag {new}"
     if g.out("rev-list", "--merges", f"refs/tags/{new}..HEAD"):
-        return False, f"carry/{new} contains merge commits"
-    return True, ""
+        return f"carry/{new} contains merge commits"
+    return ""
 
 
 def abort_rebase(g: Git) -> None:

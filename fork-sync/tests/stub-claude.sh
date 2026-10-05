@@ -5,6 +5,7 @@
 #   resolve         take upstream's side of every conflict, skip emptied commits
 #   resolve-ci      like resolve, then also edit a workflow file (must be refused)
 #   leave-rebase    exit with the rebase still in progress
+#   fix             (fix-checks mode) fold a fix into the SEMIO.md commit
 # It prints a stream-json result line like the real CLI.
 set -euo pipefail
 : "${FORK_SYNC_REPORT_PATH:?}" "${FORK_SYNC_ABORT_PATH:?}" "${FORK_SYNC_REPO_DIR:?}"
@@ -42,6 +43,13 @@ case "${STUB_BEHAVIOUR:-resolve}" in
     git commit -qam "ci: injected change"
     ;;
   leave-rebase)
+    ;;
+  fix)
+    target=$(git log --format=%H --grep '^docs: describe Semio' -1)
+    echo FORK_SYNC_TEST_FIXED >>SEMIO.md
+    git commit -q -a --fixup="$target"
+    GIT_SEQUENCE_EDITOR=true git rebase -q -i --autosquash "$target^"
+    echo "- fixed the failing check in $(git log -1 --format=%h --grep '^docs: describe Semio')" >>"$FORK_SYNC_REPORT_PATH"
     ;;
 esac
 echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"total_cost_usd":0,"result":"stub done"}'
