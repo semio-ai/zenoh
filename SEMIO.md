@@ -2,7 +2,8 @@
 
 This repository is Semio's fork of [Eclipse Zenoh](https://github.com/eclipse-zenoh/zenoh).
 Each `semio/<version>` branch is the upstream release tag `<version>` plus the Semio commits
-described below.
+described below: one feature, runtime access control, and the maintenance that keeps the
+repository's CI passing on the line.
 
 ## Runtime access control
 
@@ -42,10 +43,34 @@ configuration write goes through, and `TablesLock::set_interceptor_factories` in
   a routing-tables lock must not lock the configuration. Hat initialization does so only while
   the runtime is being built, and `Runtime::update_network` is only called from tests.
 
-## Why these commits stay in the fork
+### Why it stays in the fork
 
 ZettaScale sells runtime reconfiguration of access control in its Zenoh Commercial Edition, so
 Semio keeps this change in its fork and does not offer it upstream.
+
+## CI maintenance
+
+Each of these commits exists only so that CI passes on the line; none changes Zenoh's
+behaviour.
+
+- **Dependency pins for Rust 1.75**: upstream commits
+  [69f20aa83](https://github.com/eclipse-zenoh/zenoh/commit/69f20aa83165ae5747d0314711c0d0079752942a),
+  [9fcd9cb5d](https://github.com/eclipse-zenoh/zenoh/commit/9fcd9cb5d364192c3e8a27e66de76f4bc750d1d5)
+  and
+  [8f226b5d6](https://github.com/eclipse-zenoh/zenoh/commit/8f226b5d67663fa361d9c44b4b94a5842c3c7bc9),
+  cherry-picked with `-x`, in `commons/zenoh-pinned-deps-1-75/Cargo.toml`. Dependency versions
+  published after 1.10.1 need a newer Cargo than 1.75, which the "Check zenoh using Rust 1.75"
+  job uses. Drop them once the line is rebased on a release that includes upstream 8f226b5d6;
+  `git rebase` then skips them by itself.
+- **`#![allow(clippy::redundant_field_names)]` in `commons/zenoh-config/src/lib.rs`.** Clippy
+  1.99 reports `field: field` in the code that the `validated_struct::validator!` expansion
+  generates, and the lint jobs deny warnings. The expansion's impls sit at the crate root, so
+  the allow covers the crate. Drop it once the line is rebased on a release whose zenoh-config
+  passes the stable clippy of the time without it.
+- **Codecov uploads run only in `eclipse-zenoh/zenoh`** (`.github/workflows/ci.yml`). The
+  upload steps need upstream's Codecov token, which the fork does not have; without it they
+  fail every test job and the coverage job. Keep it for as long as the fork runs upstream's
+  workflow without a Codecov token of its own. It changes nothing upstream.
 
 ## Carrying the commits to a new Zenoh release
 
@@ -67,9 +92,15 @@ git push semio carry/<new>
 gh pr create --repo semio-ai/zenoh --base semio/<new> --head carry/<new>
 ```
 
-`git rebase` replays the commits and leaves out merge commits. Conflicts, if any, come from
-upstream changes to `Notifier` (`zenoh/src/api/config.rs`), `TablesLock::update_config`, or
-`interceptor_factories` (`zenoh/src/net/routing/interceptor/mod.rs`).
+`git rebase` replays the commits, leaves out merge commits, and skips a cherry-picked upstream
+commit that the new release already contains. Conflicts, if any, come from upstream changes to
+`Notifier` (`zenoh/src/api/config.rs`), `TablesLock::update_config`, `interceptor_factories`
+(`zenoh/src/net/routing/interceptor/mod.rs`), or the Codecov steps of
+`.github/workflows/ci.yml`. A token without the `workflow` scope cannot push a change to
+`.github/workflows/`; push the branch over SSH instead.
+
+Give the pull request a label, for instance `enhancement`: upstream's label-checklist
+workflow fails a pull request without one.
 
 Then run the tests that cover these commits, and the upstream tests around them:
 
