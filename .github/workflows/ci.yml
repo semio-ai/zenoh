@@ -258,7 +258,7 @@ jobs:
         run: cargo nextest run -p zenohd --no-default-features
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.repository == 'eclipse-zenoh/zenoh' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -313,7 +313,7 @@ jobs:
           cargo nextest run -F test -F plugins,unstable,internal --exclude zenoh-examples --exclude zenoh-plugin-example --workspace
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.repository == 'eclipse-zenoh/zenoh' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -365,7 +365,7 @@ jobs:
           cargo nextest run -F test -F shared-memory -F unstable -F transport_unixpipe -E 'not (test(test_default_features) or test(test_adminspace_read))' --exclude zenoh-examples --exclude zenoh-plugin-example --workspace
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.repository == 'eclipse-zenoh/zenoh' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -560,6 +560,7 @@ jobs:
           --skip metadata_link_failure_concurrent
 
       - name: Upload coverage to Codecov
+        if: ${{ github.repository == 'eclipse-zenoh/zenoh' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
