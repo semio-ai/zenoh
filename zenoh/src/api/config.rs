@@ -14,12 +14,14 @@
 use std::{
     env, fmt,
     path::Path,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, Weak},
 };
 
 use serde::{Deserialize, Serialize};
 use zenoh_config::ExpandedConfig;
 use zenoh_result::{bail, ZResult};
+
+use crate::net::routing::{dispatcher::tables::TablesLock, interceptor::interceptor_factories};
 
 /// Zenoh configuration.
 ///
@@ -153,6 +155,11 @@ pub type Notification = Arc<str>;
 struct NotifierInner<T> {
     inner: Mutex<T>,
     subscribers: Mutex<Vec<flume::Sender<Notification>>>,
+    /// The routing tables whose interceptors enforce the `access_control` of `inner`, or `None`
+    /// when `inner` is not the configuration of a runtime. `inner` is locked before any lock of
+    /// these tables, so once the runtime is built, code holding a tables lock must not lock
+    /// `inner`.
+    routing_tables: Option<Weak<TablesLock>>,
 }
 
 /// The wrapper for a [`Config`] that allows to subscribe to changes.
@@ -176,11 +183,19 @@ impl<T> Clone for Notifier<T> {
     }
 }
 
+/// Whether `key` designates `access_control` or a part of it, with the leading `/` the config
+/// tree accepts.
+fn is_access_control_key(key: &str) -> bool {
+    key.trim_start_matches('/')
+        .strip_prefix("access_control")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+}
+
 fn ensure_config_key_is_dynamically_writable(key: &str) -> ZResult<()> {
-    if !key.starts_with("plugins/") {
+    if !key.starts_with("plugins/") && !is_access_control_key(key) {
         bail!(
             "Error inserting conf value {} : updating config is only \
-                supported for keys starting with `plugins/`",
+                supported for keys starting with `plugins/` or `access_control`",
             key
         );
     }
@@ -193,6 +208,19 @@ impl Notifier<ExpandedConfig> {
             inner: Arc::new(NotifierInner {
                 inner: Mutex::new(inner),
                 subscribers: Mutex::new(Vec::new()),
+                routing_tables: None,
+            }),
+        }
+    }
+
+    /// Creates the configuration of the runtime that routes through `tables`: a change to its
+    /// `access_control` is enforced on every face of `tables` as it is committed.
+    pub(crate) fn with_routing_tables(inner: ExpandedConfig, tables: &Arc<TablesLock>) -> Self {
+        Notifier {
+            inner: Arc::new(NotifierInner {
+                inner: Mutex::new(inner),
+                subscribers: Mutex::new(Vec::new()),
+                routing_tables: Some(Arc::downgrade(tables)),
             }),
         }
     }
@@ -221,6 +249,10 @@ impl Notifier<ExpandedConfig> {
         }
     }
 
+    /// Locks the configuration.
+    ///
+    /// A change to `access_control` made through the returned guard is not enforced; it is
+    /// enforced when made through [`Notifier::insert_json5`] or the other methods of this type.
     pub fn lock(&self) -> MutexGuard<'_, ExpandedConfig> {
         self.lock_config()
     }
@@ -239,36 +271,75 @@ impl Notifier<ExpandedConfig> {
             .expect("acquiring Notifier's Config Mutex should not fail")
     }
 
+    /// Applies `change` to the configuration, then notifies the subscribers of `key` if `change`
+    /// returns `true`.
+    ///
+    /// A change under `access_control` is made on a copy of the configuration. The copy is
+    /// committed only once its interceptors are built and armed on every face of the routing
+    /// tables; a value that does not compile into interceptors is returned as an error, and
+    /// leaves the configuration and the interceptors as they were. The configuration stays
+    /// locked until the commit, so concurrent writers are serialized and the committed
+    /// `access_control` is the enforced one. Lock order: the configuration, then the tables.
+    fn update(
+        &self,
+        key: &str,
+        change: impl FnOnce(&mut ExpandedConfig) -> ZResult<bool>,
+    ) -> ZResult<bool> {
+        let mut config = self.lock_config();
+        let changed = if is_access_control_key(key) {
+            let mut candidate = config.clone();
+            let changed = change(&mut candidate)?;
+            if changed {
+                let factories = interceptor_factories(&candidate).map_err(|e| {
+                    zerror!("access_control left unchanged, the new value is invalid: {e}")
+                })?;
+                if let Some(tables) = self.inner.routing_tables.as_ref().and_then(Weak::upgrade) {
+                    tables.set_interceptor_factories(factories);
+                }
+                *config = candidate;
+            }
+            changed
+        } else {
+            change(&mut config)?
+        };
+        drop(config);
+        if changed {
+            self.notify(key);
+        }
+        Ok(changed)
+    }
+
     pub fn remove<K: AsRef<str>>(&self, key: K) -> ZResult<()> {
-        self.lock_config().remove(key.as_ref())?;
-        self.notify(key);
+        let key = key.as_ref();
+        self.update(key, |config| config.remove(key).map(|()| true))?;
         Ok(())
     }
 
     pub fn try_remove_json5_array_item<K: AsRef<str>>(&self, key: K) -> ZResult<bool> {
-        let applied = self
-            .lock_config()
-            .try_remove_json5_array_item(key.as_ref())?;
-        if applied {
-            self.notify(key);
-        }
-        Ok(applied)
+        let key = key.as_ref();
+        self.update(key, |config| config.try_remove_json5_array_item(key))
     }
 
+    /// Inserts `value` at `key` in the configuration of the running runtime.
+    ///
+    /// Only keys under `plugins/` and `access_control` can be changed at run time. A change to
+    /// `access_control` is enforced on every link of the runtime before it is committed; a value
+    /// that does not compile into access control rules is returned as an error and changes
+    /// nothing.
     pub fn insert_json5(&self, key: &str, value: &str) -> ZResult<()> {
         ensure_config_key_is_dynamically_writable(key)?;
-        self.lock_config().insert_json5(key, value)?;
-        self.notify(key);
+        self.update(key, |config| {
+            config.insert_json5(key, value)?;
+            Ok(true)
+        })?;
         Ok(())
     }
 
     pub fn try_insert_json5_array_item(&self, key: &str, value: &str) -> ZResult<bool> {
         ensure_config_key_is_dynamically_writable(key)?;
-        let applied = self.lock_config().try_insert_json5_array_item(key, value)?;
-        if applied {
-            self.notify(key);
-        }
-        Ok(applied)
+        self.update(key, |config| {
+            Ok(config.try_insert_json5_array_item(key, value)?)
+        })
     }
 }
 
@@ -300,6 +371,82 @@ mod tests {
             .to_string()
             .contains("supported for keys starting with `plugins/`"));
         assert_eq!(config.lock().get_json("qos/network").unwrap(), before);
+    }
+
+    #[test]
+    fn access_control_keys() {
+        for key in [
+            "access_control",
+            "/access_control",
+            "access_control/rules",
+            "access_control/rules/id=r1",
+        ] {
+            assert!(super::is_access_control_key(key), "{key}");
+        }
+        for key in [
+            "access_controls",
+            "plugins/access_control",
+            "qos/access_control",
+            "",
+        ] {
+            assert!(!super::is_access_control_key(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn runtime_access_control_change_is_committed_only_if_it_compiles() {
+        let config = super::Notifier::new(zenoh_config::Config::default().expanded());
+        config
+            .insert_json5(
+                "access_control",
+                r#"{
+                    enabled: true,
+                    default_permission: "deny",
+                    rules: [
+                        { id: "r1", permission: "allow", messages: ["put"], key_exprs: ["test/**"] },
+                        { id: "r2", permission: "allow", messages: ["query"], key_exprs: ["test/**"] },
+                    ],
+                    subjects: [{ id: "s1" }],
+                    policies: [{ id: "p1", rules: ["r1"], subjects: ["s1"] }],
+                }"#,
+            )
+            .unwrap();
+        let committed = config.lock().get_json("access_control").unwrap();
+
+        // A policy naming a subject that does not exist.
+        let err = config
+            .insert_json5(
+                "access_control/policies",
+                r#"[{ rules: ["r1"], subjects: ["s2"] }]"#,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("does not exist"), "{err}");
+        assert_eq!(config.lock().get_json("access_control").unwrap(), committed);
+
+        // Removing a rule that a policy still names.
+        let err = config
+            .try_remove_json5_array_item("access_control/rules/id=r1")
+            .unwrap_err();
+        assert!(err.to_string().contains("does not exist"), "{err}");
+        assert_eq!(config.lock().get_json("access_control").unwrap(), committed);
+
+        // A value the config tree rejects.
+        assert!(config
+            .insert_json5("access_control/default_permission", r#""maybe""#)
+            .is_err());
+        assert_eq!(config.lock().get_json("access_control").unwrap(), committed);
+
+        assert!(config
+            .try_insert_json5_array_item(
+                "/access_control/subjects/id=s1",
+                r#"{ id: "s1", zids: ["a1"] }"#,
+            )
+            .unwrap());
+        let subjects = serde_json::from_str::<serde_json::Value>(
+            &config.lock().get_json("access_control/subjects").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(subjects[0]["zids"], serde_json::json!(["a1"]));
     }
 
     #[test]
