@@ -196,7 +196,7 @@ impl Net {
                 .static_runtime()
                 .unwrap()
                 .config()
-                .lock()
+                .lock_mut()
                 .routing
                 .router
                 .linkstate

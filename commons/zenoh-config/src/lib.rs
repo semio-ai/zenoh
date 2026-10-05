@@ -20,6 +20,8 @@
 //!
 //! Configuration to pass to `zenoh::open()` and `zenoh::scout()` functions and associated constants.
 #![allow(deprecated)]
+// For the `field: field` that the `validated_struct::validator!` expansion writes at the crate root.
+#![allow(clippy::redundant_field_names)]
 
 pub mod defaults;
 pub mod gateway;

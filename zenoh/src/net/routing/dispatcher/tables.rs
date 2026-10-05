@@ -524,17 +524,32 @@ impl Debug for Tables {
 impl TablesLock {
     #[allow(dead_code)]
     pub(crate) fn update_config(&self, config: &Config) -> ZResult<()> {
-        let mut tables = zwrite!(self.tables);
         #[cfg(feature = "stats")]
         {
+            let mut tables = zwrite!(self.tables);
             let tables = &mut *tables;
             tables.data.stats.update_keys(
                 &mut tables.data.stats_keys,
                 config.stats.filters().iter().map(|k| &*k.key),
             );
         }
-        tables.data.interceptors = interceptor_factories(config)?;
-        drop(tables);
+        self.set_interceptor_factories(interceptor_factories(config)?);
+        Ok(())
+    }
+
+    /// Replaces the interceptor factories and re-arms every face with interceptors built from
+    /// them.
+    ///
+    /// The tables are write-locked only to swap the factories; the faces are re-armed under the
+    /// read lock, so routing goes on meanwhile. The re-armed chains carry a new version, which
+    /// invalidates the per-resource caches computed by the previous chains. A face created
+    /// concurrently is armed from the new factories either at its creation or by the re-arming
+    /// pass.
+    ///
+    /// The runtime configuration calls this while holding its own lock, so once the runtime is
+    /// built, code holding a lock of these tables must not lock the runtime configuration.
+    pub(crate) fn set_interceptor_factories(&self, factories: Vec<InterceptorFactory>) {
+        zwrite!(self.tables).data.interceptors = factories;
         let tables = zread!(self.tables);
         let version = tables
             .data
@@ -543,6 +558,5 @@ impl TablesLock {
         tables.data.faces.values().for_each(|face| {
             face.set_interceptors_from_factories(&tables.data.interceptors, version + 1);
         });
-        Ok(())
     }
 }

@@ -810,7 +810,7 @@ impl RuntimeBuilder {
         let shm_init_mode = *config.transport.shared_memory.mode();
 
         let namespace = config.namespace().clone();
-        let config = Notifier::new(config);
+        let config = Notifier::with_routing_tables(config, &gateway.tables);
         let span = tracing::debug_span!("rt", zid = %zid.short());
         let runtime = Runtime {
             state: Arc::new(RuntimeState {
