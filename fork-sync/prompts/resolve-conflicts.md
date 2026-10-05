@@ -7,8 +7,9 @@ afterwards, as a pull request or as a failure issue.
 ## The situation
 
 The repository at `{{REPO_DIR}}` is a clone of `{{UPSTREAM}}`, the upstream
-of Semio's fork `{{REPO}}`. Your shell starts in another directory: run
-`cd {{REPO_DIR}}` first, and work there. Semio keeps its own commits on release
+of Semio's fork `{{REPO}}`. Your shell starts in another directory. Run
+`cd {{REPO_DIR}}` once, as a command of its own, or use `git -C {{REPO_DIR}}`:
+a `cd` chained with a git command (`cd … && git …`) is refused. Semio keeps its own commits on release
 lines: `semio/<version>` starts at the upstream tag `<version>` and carries
 Semio's commits on top. The automation is carrying those commits from
 `semio/{{OLD}}` onto the new upstream release `{{NEW}}`:

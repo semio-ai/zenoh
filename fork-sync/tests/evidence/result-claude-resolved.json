@@ -1,0 +1,160 @@
+{
+  "status": "success",
+  "reason": "carried 5 commit(s) with conflicts resolved by Claude; checks pass",
+  "old": "1.10.1",
+  "new": "1.11.0",
+  "claude_runs": [
+    {
+      "cost_usd": 3.848494249999999,
+      "exit_code": 0,
+      "final_message": "The harness itself protects that file, so it stays. It is documented in the report's \"Needs human review\" section. Everything else is complete.\n\n**Outcome.** The rebase finished. `carry/1.11.0` is checked out with five Semio commits on top of upstream tag 1.11.0, no rebase is in progress, and no tracked file is modified. The report is at `/tmp/claude-0/e2e/claude/w1/out/SYNC_REPORT.md`.\n\n**The conflict.** The Semio commit adding the clippy `redundant_field_names` allow in zenoh-config collided with upstream commit 74051d0cc, the 1.11.0 release commit, which adds the same allow with its own comment. I kept upstream's file, which left the Semio commit empty, and skipped it. Git had already dropped the three Rust 1.75 dependency pins by itself because upstream commits 69f20aa83, 9fcd9cb5d and 8f226b5d6 are all in 1.11.0. The Codecov and runtime access control commits applied cleanly, and upstream touched none of the files the feature changes between the two releases.\n\n**SEMIO.md.** In the docs commit that lists the CI maintenance commits, I rewrote the entries for the pins and the clippy allow to say they were carried on 1.10.1 and are upstream since 1.11.0. Both \"drop once\" conditions are met, but the drops happened through git skipping the commits, not through any removal of mine. This rewrite is flagged for review as a judgment call.\n\n**Tests.** The Semio suites pass: acl_runtime with 6 tests, and the config and interceptor cache lib tests with 7. Among the upstream suites, adminspace passes, while one acl test and five interceptors downsampling tests fail because they bind a listener to `tcp/[::]:0` and this machine has no IPv6. The same tests fail identically on a pristine build of upstream 1.11.0 in a temporary worktree, which I removed afterwards, so the failures are environmental and I changed nothing for them.\n\n**Two things for a human to look at.** First, an untracked `.mcp.json` sits at the repository root as a root-owned `/dev/null` device node placed by the session environment. I could not remove it, so the clean-tree check may flag it. Second, my first rebase attempt was aborted by something outside my commands, as the reflog shows. I re-ran the same rebase command and reached the identical result.",
+      "is_error": false,
+      "mode": "conflicts",
+      "model": "claude-fable-5-1",
+      "permission_denials": 22,
+      "seconds": 884,
+      "stderr_tail": "\u26a0 Permission mode forced to default \u2014 CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is set (allowed_non_write_users hardening). Declare allowedTools explicitly, or set CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0 to opt out.",
+      "subtype": "success",
+      "timed_out": false,
+      "turns": 72
+    }
+  ],
+  "checks": [
+    {
+      "command": "cargo metadata --no-deps --format-version 1 --offline",
+      "log": "checks/01.log",
+      "seconds": 0,
+      "status": "passed"
+    }
+  ],
+  "commits": {
+    "added": [],
+    "carried": [
+      {
+        "cherry_picked_from": null,
+        "new_sha": "c23df01efb6479df0d9702f3729957c03213387a",
+        "sha": "3c87ad60212149c7299de3d21f0823b0767be137",
+        "subject": "feat(config): enforce access_control changes on a running node"
+      },
+      {
+        "cherry_picked_from": null,
+        "new_sha": "2ac869971bc3d87d9cd528a6044b9f852a580dd1",
+        "sha": "377eb432eb4e28f0f067250942348901333ad749",
+        "subject": "docs: describe Semio's commits on this line in SEMIO.md"
+      },
+      {
+        "cherry_picked_from": null,
+        "new_sha": "f7578795952ba74e5b5b66f85b1234eb9b541cfb",
+        "sha": "502e83de8fd9f0ab17efebbb00abb4fb8486f436",
+        "subject": "fix(config): give Notifier::lock() a read-only guard"
+      },
+      {
+        "cherry_picked_from": null,
+        "new_sha": "69f147a601b96a94a2125954cd724438acb5708b",
+        "sha": "e7a0588fd11171a434d133d4d8dd5da0e4e3ac1b",
+        "subject": "ci: upload to Codecov only from eclipse-zenoh/zenoh"
+      },
+      {
+        "cherry_picked_from": null,
+        "new_sha": "f16a89d90316ad8109d2e889b99512add649bdc0",
+        "sha": "3d46433eacb85644106906a3bfb15cb6c9e96ea6",
+        "subject": "docs: list the CI maintenance commits in SEMIO.md"
+      }
+    ],
+    "dropped_unproven": [
+      {
+        "cherry_picked_from": null,
+        "sha": "6bfb368317ca411b0a1cf8cbd8dc85f2392303d0",
+        "subject": "chore(config): allow clippy::redundant_field_names in zenoh-config"
+      }
+    ],
+    "dropped_upstream": [
+      {
+        "cherry_picked_from": "69f20aa83165ae5747d0314711c0d0079752942a",
+        "proof": "1.11.0 contains an identical change (git cherry)",
+        "sha": "5d25cd0a3c06f6725da9b91d359037c36e093a6b",
+        "subject": "With Rust 1.75 fix dependency to static_init 1.0.3 (#2782)"
+      },
+      {
+        "cherry_picked_from": "9fcd9cb5d364192c3e8a27e66de76f4bc750d1d5",
+        "proof": "1.11.0 contains an identical change (git cherry)",
+        "sha": "b7968c967b0deb3b023cdbac157a9fea976a238f",
+        "subject": "chore: pin mio-serial for Rust 1.75 compatibility on Windows (#2785)"
+      },
+      {
+        "cherry_picked_from": "8f226b5d67663fa361d9c44b4b94a5842c3c7bc9",
+        "proof": "1.11.0 contains an identical change (git cherry)",
+        "sha": "5d66130d2d67b04c85e37543193a36ad42d311f8",
+        "subject": "chore: pin hyper-util and thiserror for Rust 1.75 compatibility (#2823)"
+      }
+    ],
+    "original": [
+      {
+        "cherry_picked_from": null,
+        "sha": "3c87ad60212149c7299de3d21f0823b0767be137",
+        "subject": "feat(config): enforce access_control changes on a running node"
+      },
+      {
+        "cherry_picked_from": null,
+        "sha": "377eb432eb4e28f0f067250942348901333ad749",
+        "subject": "docs: describe Semio's commits on this line in SEMIO.md"
+      },
+      {
+        "cherry_picked_from": null,
+        "sha": "502e83de8fd9f0ab17efebbb00abb4fb8486f436",
+        "subject": "fix(config): give Notifier::lock() a read-only guard"
+      },
+      {
+        "cherry_picked_from": "69f20aa83165ae5747d0314711c0d0079752942a",
+        "sha": "5d25cd0a3c06f6725da9b91d359037c36e093a6b",
+        "subject": "With Rust 1.75 fix dependency to static_init 1.0.3 (#2782)"
+      },
+      {
+        "cherry_picked_from": "9fcd9cb5d364192c3e8a27e66de76f4bc750d1d5",
+        "sha": "b7968c967b0deb3b023cdbac157a9fea976a238f",
+        "subject": "chore: pin mio-serial for Rust 1.75 compatibility on Windows (#2785)"
+      },
+      {
+        "cherry_picked_from": "8f226b5d67663fa361d9c44b4b94a5842c3c7bc9",
+        "sha": "5d66130d2d67b04c85e37543193a36ad42d311f8",
+        "subject": "chore: pin hyper-util and thiserror for Rust 1.75 compatibility (#2823)"
+      },
+      {
+        "cherry_picked_from": null,
+        "sha": "6bfb368317ca411b0a1cf8cbd8dc85f2392303d0",
+        "subject": "chore(config): allow clippy::redundant_field_names in zenoh-config"
+      },
+      {
+        "cherry_picked_from": null,
+        "sha": "e7a0588fd11171a434d133d4d8dd5da0e4e3ac1b",
+        "subject": "ci: upload to Codecov only from eclipse-zenoh/zenoh"
+      },
+      {
+        "cherry_picked_from": null,
+        "sha": "3d46433eacb85644106906a3bfb15cb6c9e96ea6",
+        "subject": "docs: list the CI maintenance commits in SEMIO.md"
+      }
+    ]
+  },
+  "drop_suggestions": [
+    {
+      "commits": [
+        "8f226b5d6"
+      ],
+      "condition": "Drop them once the line is rebased on a release that includes upstream 8f226b5d6; `git rebase` then skips them by itself.",
+      "evidence": [
+        "8f226b5d6 is in 1.11.0"
+      ],
+      "looks_satisfied": true,
+      "title": "Dependency pins for Rust 1.75"
+    },
+    {
+      "commits": [],
+      "condition": "Drop it once the line is rebased on a release whose zenoh-config passes the stable clippy of the time without it.",
+      "evidence": [],
+      "looks_satisfied": null,
+      "title": "`#![allow(clippy::redundant_field_names)]` in `commons/zenoh-config/src/lib.rs`."
+    }
+  ],
+  "semio_md_changed": true
+}

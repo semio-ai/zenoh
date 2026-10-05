@@ -25,6 +25,7 @@ ALLOWED_TOOLS = [
 ]
 DISALLOWED_TOOLS = [
     "WebFetch", "WebSearch", "Agent", "Task",
+    "EnterWorktree", "ExitWorktree", "CronCreate", "ScheduleWakeup", "NotebookEdit",
     "Bash(git push)", "Bash(git push *)", "Bash(git fetch *)", "Bash(git pull *)",
     "Bash(git remote *)", "Bash(git config *)", "Bash(git credential *)", "Bash(git submodule *)",
     "Bash(cargo install *)", "Bash(cargo publish *)", "Bash(cargo login *)", "Bash(cargo owner *)",
