@@ -186,7 +186,6 @@ impl AdminSpace {
     pub async fn start(runtime: &Runtime) {
         let zid_str = runtime.state.zid.to_string();
         let whatami_str = runtime.state.whatami.to_str();
-        let config = &mut runtime.config().lock();
         let root_key: OwnedKeyExpr = format!("@/{zid_str}/{whatami_str}").try_into().unwrap();
 
         let mut handlers: HashMap<OwnedKeyExpr, (Handler, OwnedKeyExpr)> = HashMap::new();
@@ -242,7 +241,9 @@ impl AdminSpace {
             context,
         });
 
-        config.set_plugin_validator(Arc::downgrade(&admin));
+        runtime
+            .config()
+            .set_plugin_validator(Arc::downgrade(&admin));
 
         #[cfg(all(feature = "plugins", feature = "runtime_plugins"))]
         {

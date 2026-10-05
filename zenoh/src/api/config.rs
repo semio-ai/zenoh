@@ -13,12 +13,13 @@
 //
 use std::{
     env, fmt,
+    ops::Deref,
     path::Path,
     sync::{Arc, Mutex, MutexGuard, Weak},
 };
 
 use serde::{Deserialize, Serialize};
-use zenoh_config::ExpandedConfig;
+use zenoh_config::{ConfigValidator, ExpandedConfig};
 use zenoh_result::{bail, ZResult};
 
 use crate::net::routing::{dispatcher::tables::TablesLock, interceptor::interceptor_factories};
@@ -249,11 +250,23 @@ impl Notifier<ExpandedConfig> {
         }
     }
 
-    /// Locks the configuration.
+    /// Locks the configuration for reading.
     ///
-    /// A change to `access_control` made through the returned guard is not enforced; it is
-    /// enforced when made through [`Notifier::insert_json5`] or the other methods of this type.
-    pub fn lock(&self) -> MutexGuard<'_, ExpandedConfig> {
+    /// The guard gives no mutable access: a change goes through [`Notifier::insert_json5`] or
+    /// the other methods of this type, which enforce a change to `access_control` before they
+    /// commit it.
+    pub fn lock(&self) -> impl Deref<Target = ExpandedConfig> + '_ {
+        self.lock_config()
+    }
+
+    pub(crate) fn set_plugin_validator<T: ConfigValidator + 'static>(&self, validator: Weak<T>) {
+        self.lock_config().set_plugin_validator(validator);
+    }
+
+    /// Locks the configuration for writing, past the checks of the other methods; for tests
+    /// that apply a configuration change by hand.
+    #[cfg(test)]
+    pub(crate) fn lock_mut(&self) -> MutexGuard<'_, ExpandedConfig> {
         self.lock_config()
     }
 

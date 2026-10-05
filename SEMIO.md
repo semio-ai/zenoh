@@ -31,7 +31,16 @@ transport link at once, without closing any link.
 
 The implementation is `Notifier::update` in `zenoh/src/api/config.rs`, which every runtime
 configuration write goes through, and `TablesLock::set_interceptor_factories` in
-`zenoh/src/net/routing/dispatcher/tables.rs`.
+`zenoh/src/net/routing/dispatcher/tables.rs`. Two rules keep it sound:
+
+- **The configuration is read-only outside `Notifier`'s methods.** `Notifier::lock()`, which
+  in-process code reaches through `Runtime::config()`, returns a guard without mutable access,
+  so no caller can change `access_control` without the validation and re-arming above. This
+  departs from upstream, where the guard is mutable.
+- **Lock order: the runtime configuration, then the routing tables.** `Notifier::update` holds
+  the configuration lock while it re-arms the faces, so once the runtime is built, code holding
+  a routing-tables lock must not lock the configuration. Hat initialization does so only while
+  the runtime is being built, and `Runtime::update_network` is only called from tests.
 
 ## Why these commits stay in the fork
 
