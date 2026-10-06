@@ -160,11 +160,13 @@ Settings read from the environment: `FORK_SYNC_MODEL` (default
    sandbox: see the "Install Claude Code" step).
 4. **publish refused the branch**: the issue says why. To publish a branch
    after reviewing it yourself:
+
    ```sh
    gh run download <run-id> -R semio-ai/fork-sync -n carry-zenoh -D out
    git fetch out/carry.bundle carry/<new>:carry/<new>
    git push origin carry/<new>        # then open the PR by hand
    ```
+
 5. To retry: fix the cause, then close the issue (the next daily run retries)
    or run the workflow with `version`.
 
